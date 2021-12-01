@@ -1,0 +1,574 @@
+//First backup
+
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	fetch "github.com/HoseaTirtajaya/tokpedFetchAPI"
+	"github.com/go-chi/chi/v5/middleware"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
+)
+
+var (
+	APPLICATION_PORT string
+	DATABASE_URL     string
+)
+
+func init() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
+
+	APPLICATION_PORT = os.Getenv("APPLICATION_PORT")
+	DATABASE_URL = os.Getenv("DATABASE_URL")
+}
+
+func main() {
+	r := mux.NewRouter().StrictSlash(true)
+	r.Use(middleware.Logger)
+
+	r.Use(func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.Header().Set("Content-Type", "application/json")
+			h.ServeHTTP(rw, r)
+		})
+	})
+
+	r.HandleFunc("/api/v1/products", fetch.GetProducts).Methods("GET")
+
+	http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", APPLICATION_PORT), r)
+
+}
+
+
+
+//Second Backup
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/chromedp"
+)
+
+func main() {
+	// create chrome instance
+	ctx, cancel := chromedp.NewContext(
+		context.Background(),
+		chromedp.WithLogf(log.Printf),
+	)
+
+	defer cancel()
+
+	// create a timeout
+	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	start := time.Now()
+	// navigate to a page, wait for an element, click
+	var res string
+	err := chromedp.Run(ctx,
+		emulation.SetUserAgentOverride("WebScraper 1.0"),
+		chromedp.Navigate(`https://github.com`),
+		// wait for footer element is visible (ie, page is loaded)
+		chromedp.ScrollIntoView(`footer`),
+		chromedp.WaitVisible(`footer < div`),
+		chromedp.Text(`p`, &res, chromedp.NodeVisible, chromedp.ByQuery),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("p contains: '%s'\n", res)
+	fmt.Printf("\nTook: %f secs\n", time.Since(start).Seconds())
+}
+
+# Backup 3
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/PuerkitoBio/fetchbot"
+	"github.com/PuerkitoBio/goquery"
+
+	cdp "github.com/chromedp/chromedp"
+)
+
+var (
+	// Protect access to dup
+	mu sync.Mutex
+	wg sync.WaitGroup
+	// Duplicates table
+	dup = map[string]bool{}
+
+	urls    []string
+	chanURL = make(chan string)
+	// Command-line flags
+	//	seed        = flag.String("seed", "http://golang.org", "seed URL")
+	seed        = flag.String("seed", "http://www.tokopedia.com/", "seed URL")
+	cancelAfter = flag.Duration("cancelafter", 0, "automatically cancel the fetchbot after a given time")
+	cancelAtURL = flag.String("cancelat", "", "automatically cancel the fetchbot at a given URL")
+	stopAfter   = flag.Duration("stopafter", 2*time.Minute, "automatically stop the fetchbot after a given time")
+	stopAtURL   = flag.String("stopat", "", "automatically stop the fetchbot at a given URL")
+	memStats    = flag.Duration("memstats", 5*time.Minute, "display memory statistics at a given interval")
+)
+
+func DoExtract(chanURL chan string) {
+
+	time.Sleep(2 * time.Second)
+	for {
+		url := <-chanURL
+		//var u string
+		// Append visited urls
+		//		u := fmt.Sprintf("%v", url)
+		//		u = g(url)
+		urls = append(urls, url)
+
+		DoCDP(url)
+	}
+}
+
+func main() {
+
+	flag.Parse()
+
+	// Parse the provided seed
+	u, err := url.Parse(*seed)
+	check(err, "Error in parsing the seed url")
+
+	log.Println("The URL: ", u)
+
+	//	log.Printf("Type of u: %T:\n", u)
+	go DoExtract(chanURL)
+	chanURL <- fmt.Sprintf("%v", u)
+	//		chanURL <- string(u)
+	DoCrawl(u, chanURL)
+	close(chanURL)
+	log.Println("Len dup: ", len(dup), "\nLen urls: \n", urls)
+
+	if _, err := os.Stat(pwd() + "/TokoProductDetails.csv"); !os.IsNotExist(err) {
+
+		log.Println("The output TSV file location: ", pwd()+"/TokoProductDetails.csv")
+	} else {
+		log.Println("Required data is not present in any of processed URLs.")
+	}
+
+	// Write the processed URLs to a file
+	fmt.Println("Total no. of URLs processed: ", len(urls), "\nThe Processed URLs are in the file: ", WriteProcessedUrlsToFile(urls))
+}
+
+func DoCrawl(u *url.URL, chanURL chan string) {
+
+	// Create the muxer
+	mux := fetchbot.NewMux()
+
+	// Handle all errors the same
+	mux.HandleErrors(fetchbot.HandlerFunc(func(ctx *fetchbot.Context, res *http.Response, err error) {
+		log.Printf("[ERR] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+	}))
+
+	// Handle GET requests for html responses, to parse the body and enqueue all links as HEAD
+	// requests.
+	mux.Response().Method("GET").ContentType("text/html").Handler(fetchbot.HandlerFunc(
+		func(ctx *fetchbot.Context, res *http.Response, err error) {
+			// Process the body to find the links
+			doc, err := goquery.NewDocumentFromResponse(res)
+			if err != nil {
+				log.Printf("[ERR - GoQuery] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+				return
+			}
+			// Enqueue all links as HEAD requests
+			enqueueLinks(ctx, doc)
+		}))
+
+	// Handle HEAD requests for html responses coming from the source host - we don't want
+	// to crawl links from other hosts.
+	mux.Response().Method("HEAD").Host(u.Host).ContentType("text/html").Handler(fetchbot.HandlerFunc(
+		func(ctx *fetchbot.Context, res *http.Response, err error) {
+			if _, err := ctx.Q.SendStringGet(ctx.Cmd.URL().String()); err != nil {
+				log.Printf("[ERR] %s %s - %s\n", ctx.Cmd.Method(), ctx.Cmd.URL(), err)
+			} else {
+				wg.Add(1)
+				go func() {
+
+					// Enqueue the url in chanURL
+					chanURL <- ctx.Cmd.URL().String()
+				}()
+				wg.Wait()
+			}
+		}))
+
+	// Create the Fetcher, handle the logging first, then dispatch to the Muxer
+	h := logHandler(mux)
+	if *stopAtURL != "" || *cancelAtURL != "" {
+		stopURL := *stopAtURL
+		if *cancelAtURL != "" {
+			stopURL = *cancelAtURL
+		}
+		h = stopHandler(stopURL, *cancelAtURL != "", logHandler(mux))
+	}
+	f := fetchbot.New(h)
+
+	// First mem stat print must be right after creating the fetchbot
+	if *memStats > 0 {
+		// Print starting stats
+		printMemStats(nil)
+		// Run at regular intervals
+		runMemStats(f, *memStats)
+		// On exit, print ending stats after a GC
+		defer func() {
+			runtime.GC()
+			printMemStats(nil)
+		}()
+	}
+
+	// Start processing
+	q := f.Start()
+
+	// if a stop or cancel is requested after some duration, launch the goroutine
+	// that will stop or cancel.
+	if *stopAfter > 0 || *cancelAfter > 0 {
+		after := *stopAfter
+		stopFunc := q.Close
+		if *cancelAfter != 0 {
+			after = *cancelAfter
+			stopFunc = q.Cancel
+		}
+
+		go func() {
+			c := time.After(after)
+			<-c
+			stopFunc()
+		}()
+	}
+
+	// Enqueue the seed, which is the first entry in the dup map
+	dup[*seed] = true
+	_, err := q.SendStringGet(*seed)
+	if err != nil {
+		log.Printf("[ERR] GET %s - %s\n", *seed, err)
+	}
+	//	log.Println("The len of the queue: ", len(dup), "\nThe l is: ", l)
+	log.Println("The len(urls): ", len(urls))
+	q.Block()
+}
+
+func runMemStats(f *fetchbot.Fetcher, tick time.Duration) {
+	var mu sync.Mutex
+	var di *fetchbot.DebugInfo
+
+	// Start goroutine to collect fetchbot debug info
+	go func() {
+		for v := range f.Debug() {
+			mu.Lock()
+			di = v
+			mu.Unlock()
+		}
+	}()
+	// Start ticker goroutine to print mem stats at regular intervals
+	go func() {
+		c := time.Tick(tick)
+		for _ = range c {
+			mu.Lock()
+			printMemStats(di)
+			mu.Unlock()
+		}
+	}()
+}
+
+func printMemStats(di *fetchbot.DebugInfo) {
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	buf := bytes.NewBuffer(nil)
+
+	buf.WriteString(strings.Repeat("=", 72) + "\n")
+	buf.WriteString("Memory Profile:\n")
+	buf.WriteString(fmt.Sprintf("\tAlloc: %d Kb\n", mem.Alloc/1024))
+	buf.WriteString(fmt.Sprintf("\tTotalAlloc: %d Kb\n", mem.TotalAlloc/1024))
+	buf.WriteString(fmt.Sprintf("\tNumGC: %d\n", mem.NumGC))
+	buf.WriteString(fmt.Sprintf("\tGoroutines: %d\n", runtime.NumGoroutine()))
+	if di != nil {
+		buf.WriteString(fmt.Sprintf("\tNumHosts: %d\n", di.NumHosts))
+	}
+
+	buf.WriteString(strings.Repeat("=", 72))
+	log.Println(buf.String())
+}
+
+// stopHandler stops the fetcher if the stopurl is reached. Otherwise it dispatches
+// the call to the wrapped Handler.
+func stopHandler(stopurl string, cancel bool, wrapped fetchbot.Handler) fetchbot.Handler {
+
+	return fetchbot.HandlerFunc(func(ctx *fetchbot.Context, res *http.Response, err error) {
+		if ctx.Cmd.URL().String() == stopurl {
+			log.Printf(">>>>> STOP URL %s\n", ctx.Cmd.URL())
+			// generally not a good idea to stop/block from a handler goroutine
+			// so do it in a separate goroutine
+			go func() {
+				if cancel {
+					ctx.Q.Cancel()
+				} else {
+					ctx.Q.Close()
+				}
+			}()
+			return
+		}
+		wrapped.Handle(ctx, res, err)
+	})
+}
+
+// logHandler prints the fetch information and dispatches the call to the wrapped Handler.
+func logHandler(wrapped fetchbot.Handler) fetchbot.Handler {
+
+	return fetchbot.HandlerFunc(func(ctx *fetchbot.Context, res *http.Response, err error) {
+		if err == nil {
+			log.Printf("[%d] %s %s - %s\n", res.StatusCode, ctx.Cmd.Method(), ctx.Cmd.URL(), res.Header.Get("Content-Type"))
+		}
+		wrapped.Handle(ctx, res, err)
+	})
+}
+
+func enqueueLinks(ctx *fetchbot.Context, doc *goquery.Document) {
+
+	mu.Lock()
+	doc.Find("a[href]").Each(func(i int, s *goquery.Selection) {
+		val, _ := s.Attr("href")
+		// Resolve address
+		u, err := ctx.Cmd.URL().Parse(val)
+		if err != nil {
+			log.Printf("error: resolve URL %s - %s\n", val, err)
+			return
+		}
+		url := u.String()
+		if !dup[url] {
+			if _, err := ctx.Q.SendStringHead(url); err != nil {
+				log.Printf("error: enqueue head %s - %s\n", u, err)
+			} else {
+
+				dup[url] = true
+
+				wg.Add(1)
+				go func() {
+
+					// Enqueue the url in chanURL
+					chanURL <- ctx.Cmd.URL().String()
+				}()
+				wg.Wait()
+
+				// Enqueue the url in chanURL
+				//chanURL <- ctx.Cmd.URL().String()
+
+			}
+		}
+	})
+	mu.Unlock()
+}
+
+//================================================================================
+
+//================================================================================
+//================================================================================
+// getProductInfo extract the required information by using chromedp package
+func getProductInfo(urlstr, sel string, res *[]byte, pId, pUrl, url *string) cdp.Tasks {
+	return cdp.Tasks{
+		cdp.Navigate(urlstr),
+		cdp.Sleep(5 * time.Second),
+		cdp.WaitVisible(sel, cdp.ByID),
+		cdp.EvaluateAsDevTools("document.getElementById('product-id').value;", pId),
+		cdp.EvaluateAsDevTools("document.getElementById('product-url').value;", pUrl),
+		cdp.EvaluateAsDevTools("document.getElementById('webyclip-widget-3').contentWindow.document.body.outerHTML;", res),
+	}
+}
+
+// isPresent checks the existance of webyclip-widget-3 element.
+func isPresent(url string, res *[]byte) cdp.Tasks {
+
+	return cdp.Tasks{
+		cdp.Navigate(url),
+		cdp.Sleep(15 * time.Second),
+		//		cdp.EvaluateAsDevTools("document.getElementById('webyclip-thumbnails').childElementCount;", res),
+		cdp.EvaluateAsDevTools("if (document.getElementById('webyclip-thumbnails')) {document.getElementById('webyclip-thumbnails').childElementCount;} else {console.log('0')}", res),
+	}
+
+}
+
+//================================================================================
+// getVideoLinks returns the Youtube viedo links present in the iframe webyclip-widget-3.
+// returns all the links which are comma seperated.
+func getVideoLinks(buf []byte) string {
+
+	var videoLinks string
+
+	//Convert byte buffer to String
+	innerDoc := string(buf[:])
+	tmp := strings.TrimSpace(innerDoc)
+
+	//Find the videolinks and create one final string
+	tmpStr := strings.Fields(tmp)
+	matchStr := "i.ytimg.com/vi/"
+	yUrl := "https://www.youtube.com/watch?v="
+
+	for _, v := range tmpStr {
+
+		//log.Println("Contains: ", strings.Contains(v, "i.ytimg.com"))
+		if strings.Contains(v, matchStr) {
+
+			vv := strings.TrimPrefix(v, "src=\\\"//i.ytimg.com/vi/")
+			id := strings.Split(vv, "/")
+
+			//log.Println("https://www.youtube.com/watch?v=" + id[0])
+			//log.Println("id: \tlen:\n",len(id), id)
+
+			youtubeLink := yUrl + id[0]
+			videoLinks += youtubeLink + ","
+		}
+
+	}
+
+	// return the video links
+	return videoLinks[:len(videoLinks)-1]
+}
+
+//========================================================================================
+func WriteToFile(filePath, record string) {
+
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		//                log.Println("File open failed for writing failure counts")
+		//                return
+		log.Println("File doesn't exists. File will be created with the headers before adding data.")
+		// If file does not exists then create it with the header and write records.
+		file, err1 := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err1 != nil {
+			log.Println("File Open operation failed.")
+			return
+		}
+		defer file.Close()
+
+		header := fmt.Sprint("Product_ID" + "\t" + "Product_URL" + "\t" + "Youtube_Video_URLs")
+		file.WriteString(fmt.Sprintf("%s\n", header))
+		file.WriteString(fmt.Sprintf("%s\n", record))
+		return
+
+	}
+	defer f.Close()
+
+	log.Println("File exists Already. Adding the data for url.")
+	f.WriteString(fmt.Sprintf("%s\n", record))
+}
+
+//================================================================================
+
+func WriteProcessedUrlsToFile(urls []string) string {
+
+	filePath := pwd() + "/ProcessedURLs.csv"
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	check(err, "Error in file Open operation")
+	defer f.Close()
+
+	for _, url := range urls {
+		f.WriteString(fmt.Sprintf("%s\n", url))
+	}
+	return filePath
+}
+
+//================================================================================
+// check checks the error, panics if not nil
+func check(err error, str string) {
+
+	if err != nil {
+		log.Fatalln(err, str)
+	}
+}
+
+// pwd returns the current working directory through which the binary is invoked.
+// used to save the csv file.
+func pwd() string {
+
+	pwd, err := os.Getwd()
+	check(err, "Error in getting current workig dir.")
+	return pwd
+}
+
+//================================================================================
+
+func DoCDP(url string) {
+
+	// create context
+	ctxt, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// create chrome instancefunc(map[string]interface{}) error
+	//	c, err := cdp.New(ctxt, cdp.WithLog(log.Printf), cdp.WithRunnerOptions(cdpr.Flag("disable-web-security", "1")))
+	c, err := cdp.New(ctxt, cdp.WithRunnerOptions(cdpr.Flag("disable-web-security", "1")))
+	check(err, "Error in creating new cdp instance")
+
+	// run task list
+	var buf, buf1 []byte
+	var pId, pUrl string
+
+	// Check for the existence of the webyclip-widget-3 on the page
+	err = c.Run(ctxt, isPresent(url, &buf1))
+	check(err, "Error in Run method of cdp")
+
+	if (len(buf1) == 0) || (bytes.EqualFold([]byte("0"), buf1)) {
+
+		log.Println("No webyclip-widget-3 on page:\n ", url)
+
+		// shutdown chrome
+		err = c.Shutdown(ctxt)
+		check(err, "Error in shutting down chrome")
+
+		// wait for chrome to finish
+		err = c.Wait()
+		check(err, "Error in wait to shutdown chrome")
+
+		return
+		//os.Exit(0)
+
+	} else {
+
+		//fmt.Println("In ELSE The status is: \t Len: ", len(buf), "\t", string(buf), " \t", buf)
+		// Exit the code if "webyclip-widget-3" is not present.
+		err = c.Run(ctxt, getProductInfo(url, `#webyclip-widget-3`, &buf, &pId, &pUrl, &url))
+		check(err, "Error in Run method of cdp")
+
+		// shutdown chrome
+		err = c.Shutdown(ctxt)
+		check(err, "Error in shutting down chrome")
+
+		// wait for chrome to finish
+		err = c.Wait()
+		check(err, "Error in wait to shutdown chrome")
+
+		pLinks := getVideoLinks(buf)
+		record := fmt.Sprint(pId + "\t" + pUrl + "\t" + pLinks)
+		filePath := pwd() + "/TokoProductDetails.csv"
+
+		WriteToFile(filePath, record)
+	}
+}
