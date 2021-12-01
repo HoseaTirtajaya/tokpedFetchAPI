@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -18,14 +17,15 @@ func main() {
 	defer cancel()
 
 	// run task list
-	var res string
+	var res []string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(`https://www.tokopedia.com/p/handphone-tablet/handphone`),
-		chromedp.Text(`css-1dq1dix e1nlzfl1`, &res, chromedp.NodeVisible),
+		chromedp.WaitVisible(`body > footer`),
+		chromedp.Click(`.css-1dq1dix e1nlzfl1`, chromedp.NodeVisible)
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println(strings.TrimSpace(res))
+	log.Println(res)
 }
