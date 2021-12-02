@@ -1,31 +1,45 @@
 package main
 
 import (
-	"context"
+	"encoding/csv"
+	"fmt"
 	"log"
-	"time"
+	"os"
+	"strconv"
 
-	"github.com/chromedp/chromedp"
+	"github.com/gocolly/colly"
 )
 
 func main() {
-	// create context
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
+	fName := "tokpedScrap.csv"
 
-	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// run task list
-	var res []string
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(`https://www.tokopedia.com/p/handphone-tablet/handphone`),
-		chromedp.WaitVisible(`body > footer`),
-		chromedp.Click(`.css-1dq1dix e1nlzfl1`, chromedp.NodeVisible)
-	)
+	file, err := os.Create(fName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Couldn't create file, err: %q", err)
+		return
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	c := colly.NewCollector(
+		colly.AllowedDomains("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100"),
+	)
+
+	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
+		writer.Write([]string{
+			h.ChildText("span"),
+		})
+	})
+
+	for i := 0; i < 3; i++ {
+
+		fmt.Printf("Scraping page: %d\n", i)
+
+		c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100&page=" + strconv.Itoa(i))
 	}
 
-	log.Println(res)
+	log.Printf("Scraping Complete\n")
+	log.Println(c)
 }

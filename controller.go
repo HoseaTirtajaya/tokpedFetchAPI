@@ -17,7 +17,6 @@ type response struct {
 }
 
 func GetProducts(w http.ResponseWriter, r *http.Request) {
-
 	// respdata, err := http.Get("https://ace.tokopedia.com/search/product/v3?device=desktop&ob=23&q=handphone&rows=100&source=shop_product&start=0")
 	respdata, err := http.Get("https://www.tokopedia.com/p/handphone-tablet/handphone")
 	if err != nil {
