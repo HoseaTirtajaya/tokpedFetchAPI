@@ -27,11 +27,15 @@ func main() {
 		colly.AllowedDomains("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100"),
 	)
 
+	log.Println("abis ini on html")
 	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
+		log.Println("udah di function on html")
+		log.Println(h.ChildText("span"))
 		writer.Write([]string{
-			h.ChildText("span"),
+			h.ChildText("span class=css-1bjwylw"),
 		})
 	})
+	log.Println(c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100"))
 
 	for i := 0; i < 3; i++ {
 
