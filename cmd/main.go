@@ -22,6 +22,8 @@ func main() {
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
+	//Write header
+	writer.Write([]string{"Name", "Price", "Toko"})
 
 	c := colly.NewCollector(
 		colly.UserAgent("xy"),
