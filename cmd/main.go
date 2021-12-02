@@ -34,7 +34,7 @@ func main() {
 	c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone")
 	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
 		log.Println("udah di function on html")
-		log.Println(h.ChildText("span"))
+		log.Println(h.ChildAttrs("span", "class"))
 		writer.Write([]string{
 			h.ChildText("span"),
 		})
