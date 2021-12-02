@@ -24,24 +24,25 @@ func main() {
 	defer writer.Flush()
 
 	c := colly.NewCollector(
-		colly.AllowedDomains("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100"),
+		colly.UserAgent("xy"),
+		colly.AllowURLRevisit(),
+		colly.AllowedDomains("www.tokopedia.com"),
 	)
 
-	log.Println("abis ini on html")
+	c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone")
 	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
 		log.Println("udah di function on html")
 		log.Println(h.ChildText("span"))
 		writer.Write([]string{
-			h.ChildText("span class=css-1bjwylw"),
+			h.ChildText("span"),
 		})
 	})
-	log.Println(c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100"))
 
 	for i := 0; i < 3; i++ {
 
 		fmt.Printf("Scraping page: %d\n", i)
 
-		c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100&page=" + strconv.Itoa(i))
+		log.Println("ini tokped page", c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100&page="+strconv.Itoa(i)))
 	}
 
 	log.Printf("Scraping Complete\n")
