@@ -31,20 +31,23 @@ func main() {
 		colly.AllowedDomains("www.tokopedia.com", "tokopedia.com"),
 	)
 
-	var productName, productPrice, namaToko string
+	var ProductName, ProductPrice, NamaToko, ImageLink string
 
 	// productDesc, productRating, imageLink
 
 	c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100")
-	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
-		productName = h.ChildText("span.css-1bjwylw")
-		productPrice = h.ChildText("span.css-o5uqvq")
-		namaToko = h.ChildText("span.css-1kr22w3:last-child")
-		// imageLink = h.ChildAttr("img", "src")
+	c.OnHTML(".css-89jnbj", func(h *colly.HTMLElement) {
+		// log.Println(h.Request.AbsoluteURL(h.Attr("href")))
+		ProductName = h.ChildText("span.css-1bjwylw")
+		ProductPrice = h.ChildText("span.css-o5uqvq")
+		NamaToko = h.ChildText("span.css-1kr22w3:last-child")
+		ImageLink = h.ChildAttr("css-t8frx0>img.success.fade", "src")
+		log.Println(ImageLink)
+
 		writer.Write([]string{
-			productName,
-			productPrice,
-			namaToko,
+			ProductName,
+			ProductPrice,
+			NamaToko,
 		})
 	})
 
