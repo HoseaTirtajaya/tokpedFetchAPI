@@ -28,18 +28,38 @@ func main() {
 	c := colly.NewCollector(
 		colly.UserAgent("xy"),
 		colly.AllowURLRevisit(),
-		colly.AllowedDomains("www.tokopedia.com"),
+		colly.AllowedDomains("www.tokopedia.com", "tokopedia.com"),
 	)
 
-	c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone")
+	var productName, productPrice, namaToko, imageLink string
+
+	// productDesc, productRating
+
+	c.Visit("https://www.tokopedia.com/p/handphone-tablet/handphone?ob=23&sc=24&limit=100")
 	c.OnHTML(".css-16vw0vn", func(h *colly.HTMLElement) {
-		log.Println("udah di function on html")
-		log.Println(h.ChildAttrs("span", "class"))
-		writer.Write([]string{
-			h.ChildText("span"),
-		})
+		productName = h.ChildText("span.css-1bjwylw")
+		productPrice = h.ChildText("span.css-o5uqvq")
+		namaToko = h.ChildText("span.css-1kr22w3:last-child")
+		imageLink = h.ChildAttr("img", "src")
+		log.Println(imageLink)
 	})
 
+	c.OnHTML(".css-89jnbj", func(h *colly.HTMLElement) {
+		a := h.Request.Visit(h.Attr("href"))
+
+		log.Println(a)
+	})
+
+	// c.OnHTML("img[src]", func(h *colly.HTMLElement) {
+	// 	imageLink = h.Request.AbsoluteURL(h.Attr("src"))
+	// 	log.Println(imageLink)
+	// })
+
+	writer.Write([]string{
+		productName,
+		productPrice,
+		namaToko,
+	})
 	for i := 0; i < 3; i++ {
 
 		fmt.Printf("Scraping page: %d\n", i)
